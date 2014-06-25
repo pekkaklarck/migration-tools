@@ -11,13 +11,9 @@ GOOGLE_CODE_ISSUES = (
     'http://code.google.com/p/{project}/issues/csv?start={start}&num={num}'
     '&colspec=ID%20Status%20Type%20Priority%20Target%20Summary&can=1')
 ISSUE_URL = 'http://code.google.com/p/{project}/issues/detail?id={id}'
-ISSUE_BODY = u"""{description}
-
-This issue was originally opened at <a href="{url}">Google Code</a> on {date}.
-"""
-COMMENT = u"""[Original comment]({url}) by `{user}` on {date}.
-
-{body}
+ISSUE_TEXT = u"""{text}
+<hr>
+<a href="{url}">Originally submitted</a> by <code>{user}</code> on {date}.
 """
 CLOSED_STATES = ['wontfix', 'done', 'invalid', 'fixed']
 
@@ -49,10 +45,11 @@ class IssueTransfomer(object):
         return self._format_body(soup, url), self._format_comments(soup, url)
 
     def _format_body(self, details, url):
-        description = self._text_content_of(
+        text = self._text_content_of(
             details.select('div.issuedescription pre')[0])
+        user = details.select('a.userlink')[0].string
         date = details.select('div.issuedescription .date')[0].string
-        return ISSUE_BODY.format(description=description, date=date, url=url)
+        return ISSUE_TEXT.format(text=text, user=user, date=date, url=url)
 
     def _format_comments(self, details, issue_url):
         for (idx, comment) in enumerate(details.select('div.issuecomment')):
@@ -63,7 +60,7 @@ class IssueTransfomer(object):
             url = '{}#c{}'.format(issue_url, idx + 1)
             user = comment.find(class_='userlink').string
             date = comment.find(class_='date').string.strip()
-            yield COMMENT.format(url=url, body=body, user=user, date=date)
+            yield ISSUE_TEXT.format(url=url, text=body, user=user, date=date)
 
     def _text_content_of(self, element):
         replacements = [('<pre>', ''), ('</pre>', ''), ('<b>', '**'),
