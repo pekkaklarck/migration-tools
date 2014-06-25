@@ -89,12 +89,12 @@ class DummyIssue(object):
         self.comments = []
 
 
-def main(source_project, target_project, github_username, issue_limit,
-         id_sync):
-    gh, repo = access_github_repo(target_project, github_username)
+def main(source_project, target_project, github_username, github_password,
+         start_issue, issue_limit, id_sync):
+    gh, repo = access_github_repo(target_project, github_username, github_password)
     existing_issues = [i.number for i in repo.iter_issues(state='all')]
-    sync_id = 1
-    for issue in get_google_code_issues(source_project, issue_limit):
+    sync_id = start_issue
+    for issue in get_google_code_issues(source_project, start_issue, issue_limit):
         debug('Processing issue:\n{issue}'.format(issue=issue))
         milestone = get_milestone(repo, issue)
         if id_sync and issue.id in existing_issues:
@@ -111,17 +111,17 @@ def main(source_project, target_project, github_username, issue_limit,
             break
 
 
-def access_github_repo(target_project, github_username):
-    github_password = getpass.getpass(
-        'Github password for {user}: '.format(user=github_username))
-    gh = login(github_username, password=github_password)
+def access_github_repo(target_project, username, password=None):
+    if not password:
+        prompt = 'GitHub password for {user}: '.format(user=username)
+        password = getpass.getpass(prompt)
+    gh = login(username, password=password)
     repo_owner, repo_name = target_project.split('/')
     return gh, gh.repository(repo_owner, repo_name)
 
 
-def get_google_code_issues(project, issue_limit):
+def get_google_code_issues(project, start, issue_limit):
     limit_issues = issue_limit > 0
-    start = 0
     issues = []
     num = 100
     while True:
@@ -130,7 +130,7 @@ def get_google_code_issues(project, issue_limit):
                 return issues
             num = min(issue_limit, 100)
             issue_limit -= 100
-        url = GOOGLE_CODE_ISSUES.format(project=project, start=start, num=num)
+        url = GOOGLE_CODE_ISSUES.format(project=project, start=start-1, num=num)
         debug('Fetching issues from {url}'.format(url=url))
         reader = csv.reader(urllib2.urlopen(url))
         paginated = False
@@ -187,9 +187,11 @@ if __name__ == '__main__':
     parser.add_argument('source_project')
     parser.add_argument('target_project')
     parser.add_argument('github_username')
-    parser.add_argument('-n', '--limit', dest='limit', default=0)
+    parser.add_argument('github_password', nargs='?', default=None)
+    parser.add_argument('-n', '--limit', dest='limit', type=int, default=-1)
+    parser.add_argument('-s', '--start', dest='start', type=int, default=1)
     parser.add_argument('--no-id-sync', action='store_true')
     args = parser.parse_args()
 
     main(args.source_project, args.target_project, args.github_username,
-         int(args.limit), id_sync=not args.no_id_sync)
+         args.github_password, args.start, args.limit, id_sync=not args.no_id_sync)
