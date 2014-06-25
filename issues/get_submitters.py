@@ -16,6 +16,7 @@ def add(user, id):
 
 
 for issue in get_google_code_issues(args.project, args.start, args.limit):
+    add(issue.owner, issue.id)
     add(issue.description.user, issue.id)
     for comment in issue.comments:
         add(comment.user, issue.id)

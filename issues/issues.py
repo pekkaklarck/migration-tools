@@ -11,19 +11,21 @@ from github3 import login
 
 GOOGLE_CODE_ISSUES = (
     'http://code.google.com/p/{project}/issues/csv?start={start}&num={num}'
-    '&colspec=ID%20Status%20Type%20Priority%20Target%20Summary&can=1')
+    '&colspec=ID%20Status%20Type%20Priority%20Target%20Owner%20Summary&can=1')
 ISSUE_URL = 'http://code.google.com/p/{project}/issues/detail?id={id}'
 CLOSED_STATES = ['wontfix', 'done', 'invalid', 'fixed']
 
 
 class Issue(object):
 
-    def __init__(self, project, id_, status, type_, priority, target, summary):
+    def __init__(self, project, id_, status, type_, priority, target, owner,
+                 summary):
         self.id = int(id_)
         self.summary = summary
         self.open = status.lower() not in CLOSED_STATES
         self.labels = self._get_labels(type_, priority, status)
         self.target = target
+        self.owner = owner or None
         self.description, self.comments = self._get_issue_details(project, id_)
 
     def _get_labels(self, type_, priority, status):
@@ -199,7 +201,7 @@ def get_google_code_issues(project, start=1, issue_limit=-1):
                 start += 100
                 paginated = True
             else:
-                issues.append(Issue(project, *row[:6]))
+                issues.append(Issue(project, *row[:7]))
         if not paginated:
             debug('Read {num} issues from Google Code'.format(num=len(issues)))
             return issues
