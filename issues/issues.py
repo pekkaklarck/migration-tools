@@ -2,6 +2,8 @@ import argparse
 import getpass
 import csv
 import urllib2
+import re
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 from github3 import login
@@ -48,8 +50,11 @@ class IssueTransfomer(object):
         text = self._text_content_of(
             details.select('div.issuedescription pre')[0])
         user = details.select('a.userlink')[0].string
-        date = details.select('div.issuedescription .date')[0].string
+        date = self._parse_date(details.select('div.issuedescription .date')[0])
         return ISSUE_TEXT.format(text=text, user=user, date=date, url=url)
+
+    def _parse_date(self, element):
+        return DateFormatter().format(element.string.strip())
 
     def _format_comments(self, details, issue_url):
         for (idx, comment) in enumerate(details.select('div.issuecomment')):
@@ -59,7 +64,7 @@ class IssueTransfomer(object):
                 continue
             url = '{}#c{}'.format(issue_url, idx + 1)
             user = comment.find(class_='userlink').string
-            date = comment.find(class_='date').string.strip()
+            date = self._parse_date(comment.find(class_='date'))
             yield ISSUE_TEXT.format(url=url, text=body, user=user, date=date)
 
     def _text_content_of(self, element):
@@ -87,6 +92,45 @@ class DummyIssue(object):
         self.body = ('Created in place of missing (most likely deleted)'
                      ' Google Code issue')
         self.comments = []
+
+
+class DateFormatter(object):
+    _full_date = re.compile('(\w{3}) (\d+), (\d{4})')
+    _today = re.compile('Today \((\d+) hours? ago\)')
+    _yesterday = re.compile('Yesterday \((\d+) hours? ago\)')
+    _days_ago = re.compile('\w{3} \d+ \((\d+) days? ago\)')
+    _format = '{day} {month} {year}'.format
+
+    def format(self, date):
+        for matcher, formatter in [
+            (self._full_date, self._full_date_formatter),
+            (self._today, self._today_formatter),
+            (self._yesterday, self._yesterday_formatter),
+            (self._days_ago, self._days_ago_formatter)
+        ]:
+            match = matcher.match(date)
+            if match:
+                return formatter(match)
+        raise ValueError('Unknown date: %s' % date)
+
+    def _full_date_formatter(self, match):
+        month, day, year = match.groups()
+        return self._format(**locals())
+
+    def _today_formatter(self, match):
+        return self._format_date_ago(hours=match.group(1))
+
+    def _yesterday_formatter(self, match):
+        return self._format_date_ago(hours=match.group(1))
+
+    def _days_ago_formatter(self, match):
+        return self._format_date_ago(days=match.group(1))
+
+    def _format_date_ago(self, days=0, hours=0):
+        dt = datetime.now() - timedelta(days=int(days), hours=int(hours))
+        month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dt.month-1]
+        return self._format(day=dt.day, month=month, year=dt.year)
 
 
 def main(source_project, target_project, github_username, github_password,
