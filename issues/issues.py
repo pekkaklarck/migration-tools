@@ -43,7 +43,10 @@ class IssueTransfomer(object):
     def _get_issue_details(self, project, id_):
         opener = urllib2.build_opener()
         url = ISSUE_URL.format(project=project, id=id_)
-        soup = BeautifulSoup(opener.open(url).read())
+        try:
+            soup = BeautifulSoup(opener.open(url).read())
+        except urllib2.HTTPError:
+            return 'Failed to get issue details from {}'.format(url), []
         return self._format_body(soup, url), self._format_comments(soup, url)
 
     def _format_body(self, details, url):
