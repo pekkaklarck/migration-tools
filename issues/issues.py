@@ -13,14 +13,10 @@ GOOGLE_CODE_ISSUES = (
     'http://code.google.com/p/{project}/issues/csv?start={start}&num={num}'
     '&colspec=ID%20Status%20Type%20Priority%20Target%20Summary&can=1')
 ISSUE_URL = 'http://code.google.com/p/{project}/issues/detail?id={id}'
-ISSUE_TEXT = u"""{text}
-<hr>
-<a href="{url}">Originally submitted</a> by <code>{user}</code> on {date}.
-"""
 CLOSED_STATES = ['wontfix', 'done', 'invalid', 'fixed']
 
 
-class IssueTransfomer(object):
+class Issue(object):
 
     def __init__(self, project, id_, status, type_, priority, target, summary):
         self.id = int(id_)
@@ -28,7 +24,7 @@ class IssueTransfomer(object):
         self.open = status.lower() not in CLOSED_STATES
         self.labels = self._get_labels(type_, priority, status)
         self.target = target
-        self.body, self.comments = self._get_issue_details(project, id_)
+        self.description, self.comments = self._get_issue_details(project, id_)
 
     def _get_labels(self, type_, priority, status):
         labels = []
@@ -46,29 +42,27 @@ class IssueTransfomer(object):
         try:
             soup = BeautifulSoup(opener.open(url).read())
         except urllib2.HTTPError:
-            return 'Failed to get issue details from {}'.format(url), []
-        return self._format_body(soup, url), self._format_comments(soup, url)
+            return IssueText('Failed to get details from {}'.format(url)), []
+        return (self._format_description(soup, url),
+                self._format_comments(soup, url))
 
-    def _format_body(self, details, url):
+    def _format_description(self, details, url):
         text = self._text_content_of(
             details.select('div.issuedescription pre')[0])
         user = details.select('a.userlink')[0].string
-        date = self._parse_date(details.select('div.issuedescription .date')[0])
-        return ISSUE_TEXT.format(text=text, user=user, date=date, url=url)
-
-    def _parse_date(self, element):
-        return DateFormatter().format(element.string.strip())
+        date = details.select('div.issuedescription .date')[0].string
+        return IssueText(text, user, date, url)
 
     def _format_comments(self, details, issue_url):
         for (idx, comment) in enumerate(details.select('div.issuecomment')):
-            body = '\n'.join([self._text_content_of(part)
+            text = '\n'.join([self._text_content_of(part)
                               for part in comment.select('pre')])
-            if '(No comment was entered for this change.)' in body:
+            if '(No comment was entered for this change.)' in text:
                 continue
             url = '{}#c{}'.format(issue_url, idx + 1)
             user = comment.find(class_='userlink').string
-            date = self._parse_date(comment.find(class_='date'))
-            yield ISSUE_TEXT.format(url=url, text=body, user=user, date=date)
+            date = comment.find(class_='date').string
+            yield IssueText(text, user, date, url)
 
     def _text_content_of(self, element):
         replacements = [('<pre>', ''), ('</pre>', ''), ('<b>', '**'),
@@ -84,6 +78,23 @@ class IssueTransfomer(object):
                            self.labels)
 
 
+class IssueText(object):
+
+    def __init__(self, text, user=None, date=None, url=None):
+        self.text = text
+        self.user = user
+        self.date = DateFormatter().format(date.strip()) if date else None
+        self.url = url
+
+    def __unicode__(self):
+        if not self.user:
+            return self.text
+        return u"""{text}
+<hr>
+<a href="{url}">Originally submitted</a> by <code>{user}</code> on {date}.
+""".format(text=self.text, user=self.user, date=self.date, url=self.url)
+
+
 class DummyIssue(object):
 
     def __init__(self, id_):
@@ -92,8 +103,8 @@ class DummyIssue(object):
         self.open = False
         self.labels = []
         self.target = ''
-        self.body = ('Created in place of missing (most likely deleted)'
-                     ' Google Code issue')
+        self.description = IssueText('Created in place of missing (most likely '
+                                     'deleted) Google Code issue')
         self.comments = []
 
 
@@ -167,7 +178,7 @@ def access_github_repo(target_project, username, password=None):
     return gh, gh.repository(repo_owner, repo_name)
 
 
-def get_google_code_issues(project, start, issue_limit):
+def get_google_code_issues(project, start=1, issue_limit=-1):
     limit_issues = issue_limit > 0
     issues = []
     num = 100
@@ -188,7 +199,7 @@ def get_google_code_issues(project, start, issue_limit):
                 start += 100
                 paginated = True
             else:
-                issues.append(IssueTransfomer(project, *row[:6]))
+                issues.append(Issue(project, *row[:6]))
         if not paginated:
             debug('Read {num} issues from Google Code'.format(num=len(issues)))
             return issues
@@ -219,10 +230,10 @@ def debug(msg):
 
 def insert_issue(repo, issue, milestone):
     github_issue = repo.create_issue(
-        issue.summary, issue.body, labels=issue.labels,
+        issue.summary, unicode(issue.description), labels=issue.labels,
         milestone=milestone)
     for comment in issue.comments:
-        github_issue.create_comment(comment)
+        github_issue.create_comment(unicode(comment))
     if not issue.open:
         github_issue.close()
     debug('Created issue {url}'.format(url=github_issue.html_url))
