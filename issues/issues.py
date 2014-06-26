@@ -113,16 +113,18 @@ class DummyIssue(object):
 
 class DateFormatter(object):
     _full_date = re.compile('(\w{3}) (\d+), (\d{4})')
-    _today = re.compile('Today \((\d+) hours? ago\)')
-    _yesterday = re.compile('Yesterday \((\d+) hours? ago\)')
+    _moments_ago = re.compile('.* \(moments? ago\)')
+    _minutes_ago = re.compile('.* \((\d+) minutes? ago\)')
+    _hours_ago = re.compile('.* \((\d+) hours? ago\)')
     _days_ago = re.compile('\w{3} \d+ \((\d+) days? ago\)')
     _format = '{day} {month} {year}'.format
 
     def format(self, date):
         for matcher, formatter in [
             (self._full_date, self._full_date_formatter),
-            (self._today, self._today_formatter),
-            (self._yesterday, self._yesterday_formatter),
+            (self._moments_ago, self._moments_ago_formatter),
+            (self._minutes_ago, self._minutes_ago_formatter),
+            (self._hours_ago, self._hours_ago_formatter),
             (self._days_ago, self._days_ago_formatter)
         ]:
             match = matcher.match(date)
@@ -134,17 +136,21 @@ class DateFormatter(object):
         month, day, year = match.groups()
         return self._format(**locals())
 
-    def _today_formatter(self, match):
-        return self._format_date_ago(hours=match.group(1))
+    def _moments_ago_formatter(self, match):
+        return self._format_date_ago()
 
-    def _yesterday_formatter(self, match):
+    def _minutes_ago_formatter(self, match):
+        return self._format_date_ago(minutes=match.group(1))
+
+    def _hours_ago_formatter(self, match):
         return self._format_date_ago(hours=match.group(1))
 
     def _days_ago_formatter(self, match):
         return self._format_date_ago(days=match.group(1))
 
-    def _format_date_ago(self, days=0, hours=0):
-        dt = datetime.now() - timedelta(days=int(days), hours=int(hours))
+    def _format_date_ago(self, days=0, hours=0, minutes=0):
+        dt = datetime.now() - timedelta(days=int(days), hours=int(hours),
+                                        minutes=int(minutes))
         month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dt.month-1]
         return self._format(day=dt.day, month=month, year=dt.year)
