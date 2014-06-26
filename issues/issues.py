@@ -3,6 +3,7 @@ import getpass
 import csv
 import urllib2
 import re
+import sys
 from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
@@ -227,7 +228,7 @@ def api_call_limit_reached(gh):
 
 
 def debug(msg):
-    print msg
+    print >> sys.stderr, msg
 
 
 def insert_issue(repo, issue, milestone):
