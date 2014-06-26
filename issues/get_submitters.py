@@ -1,8 +1,8 @@
 import argparse
 from issues import get_google_code_issues
 
-parser = argparse.ArgumentParser(
-    description='Get issue submitters and commenters from Google Code')
+parser = argparse.ArgumentParser(description='Get issue submitters, commenters '
+                                 'and owners from Google Code in TSV format.')
 parser.add_argument('project')
 parser.add_argument('-n', '--limit', dest='limit', type=int, default=-1)
 parser.add_argument('-s', '--start', dest='start', type=int, default=1)
