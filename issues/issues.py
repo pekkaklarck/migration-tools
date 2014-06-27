@@ -110,17 +110,16 @@ class IssueText(object):
 
 
 class DummyIssue(object):
+    summary = "Dummy issue"
+    description = IssueText('Created in place of deleted Google Code issue')
+    open = False
+    target = ''
+    owner = ''
+    labels = []
+    comments = []
 
-    def __init__(self, id_):
-        self.id = id_
-        self.summary = "Dummy issue"
-        self.open = False
-        self.labels = []
-        self.target = ''
-        self.owner = ''
-        self.description = IssueText('Created in place of missing (most likely '
-                                     'deleted) Google Code issue')
-        self.comments = []
+    def __init__(self, id):
+        self.id = id
 
 
 class SubmitterMapper(object):
@@ -193,25 +192,25 @@ class DateFormatter(object):
 
 
 def main(source_project, target_project, github_username, github_password,
-         start_issue, issue_limit, id_sync, submitter_map=None):
+         issue_limit, submitter_map=None):
     global SUBMITTER_MAPPER
     SUBMITTER_MAPPER = SubmitterMapper(submitter_map)
     gh, repo = access_github_repo(target_project, github_username, github_password)
-    existing_issues = [i.number for i in repo.iter_issues(state='all')]
-    sync_id = start_issue
-    for issue in get_google_code_issues(source_project, start_issue, issue_limit):
+    issues = list(repo.iter_issues(state='all'))
+    next_issue = len(issues) + 1
+    deleted = len([i for i in issues if i.title == DummyIssue.summary])
+    del issues
+    for issue in get_google_code_issues(source_project, next_issue - deleted,
+                                        issue_limit):
         debug('Processing issue:\n{issue}'.format(issue=issue))
         milestone = get_milestone(repo, issue)
-        if id_sync and issue.id in existing_issues:
-            debug('Skipping already processed issue')
-            sync_id += 1
-            continue
-        while id_sync and issue.id > sync_id:
+        while issue.id > next_issue:
             # Insert placeholder issues for missing/deleted GCode issues
-            insert_issue(repo, DummyIssue(sync_id), milestone=None)
-            sync_id += 1
+            insert_issue(repo, DummyIssue(next_issue))
+            next_issue += 1
+        assert issue.id == next_issue, '%r != %r' % (issue.id, next_issue)
         insert_issue(repo, issue, milestone)
-        sync_id += 1
+        next_issue += 1
         if api_call_limit_reached(gh):
             break
 
@@ -281,10 +280,11 @@ def info(msg):
     print >> sys.stderr, '[ INFO  ]', msg
 
 
-def insert_issue(repo, issue, milestone):
+def insert_issue(repo, issue, milestone=None):
     github_issue = repo.create_issue(
         issue.summary, unicode(issue.description), labels=issue.labels,
         milestone=milestone)
+    assert github_issue.number == issue.id, '%r != %r' % (github_issue.number, issue.id)
     for comment in issue.comments:
         github_issue.create_comment(unicode(comment))
     if not issue.open:
@@ -296,7 +296,8 @@ def insert_issue(repo, issue, milestone):
             error("Failed to assign '%s' as owner for issue %s."
                   % (issue.owner[1:], issue.id))
 
-    debug('Created issue {url}'.format(url=github_issue.html_url))
+    debug('Created {issue_type} {url}'.format(issue_type=type(issue).__name__,
+                                              url=github_issue.html_url))
 
 
 if __name__ == '__main__':
@@ -306,12 +307,9 @@ if __name__ == '__main__':
     parser.add_argument('target_project')
     parser.add_argument('github_username')
     parser.add_argument('github_password', nargs='?', default=None)
-    parser.add_argument('-n', '--limit', dest='limit', type=int, default=-1)
-    parser.add_argument('-s', '--start', dest='start', type=int, default=1)
+    parser.add_argument('-l', '--limit', dest='limit', type=int, default=-1)
     parser.add_argument('-m', '--submitter-map', dest='submitter_map')
-    parser.add_argument('--no-id-sync', action='store_true')
     args = parser.parse_args()
 
     main(args.source_project, args.target_project, args.github_username,
-         args.github_password, args.start, args.limit, not args.no_id_sync,
-         args.submitter_map)
+         args.github_password, args.limit, args.submitter_map)
