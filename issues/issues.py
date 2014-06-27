@@ -201,8 +201,7 @@ def main(source_project, target_project, github_username, github_password,
     deleted, next_issue = _get_migrated_issue_numbers(repo)
     for issue in get_google_code_issues(source_project, next_issue - deleted,
                                         issue_limit):
-        if api_call_limit_reached(gh):
-            break
+        ensure_api_calls_left(gh)
         debug('Processing issue:\n{issue}'.format(issue=issue))
         milestone = get_milestone(repo, issue)
         while issue.id > next_issue:
@@ -266,13 +265,11 @@ def get_milestone(repo, issue):
     return repo.create_milestone(issue.target).number
 
 
-def api_call_limit_reached(gh):
-    remaining = gh.ratelimit_remaining
-    debug('Remaining API calls: {rem}'.format(rem=remaining))
-    if remaining < 50:
-        debug('API calls consumed, wait for an hour')
-        return True
-    return False
+def ensure_api_calls_left(gh):
+    while gh.ratelimit_remaining < 50:
+        debug('Not enough API calls left, sleeping one minute')
+        time.sleep(60)
+    debug('Remaining API calls: {}'.format(gh.ratelimit_remaining))
 
 
 def debug(msg):
