@@ -4,6 +4,7 @@ import csv
 import urllib2
 import re
 import sys
+import time
 from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
@@ -66,12 +67,13 @@ class Issue(object):
         return IssueText(text, user, date, url)
 
     def _format_comments(self, details, issue_url):
-        for (idx, comment) in enumerate(details.select('div.issuecomment')):
+        for comment in details.select('div.issuecomment'):
             text = '\n'.join([self._text_content_of(part)
                               for part in comment.select('pre')])
             if '(No comment was entered for this change.)' in text:
                 continue
-            url = '{}#c{}'.format(issue_url, idx + 1)
+            name = comment.select('.author a')[0]['name']
+            url = '{}#{}'.format(issue_url, name)
             user = comment.find(class_='userlink').string
             date = comment.find(class_='date').string
             yield IssueText(text, user, date, url)
@@ -290,6 +292,7 @@ def insert_issue(repo, issue, milestone=None):
     assert github_issue.number == issue.id, '%r != %r' % (github_issue.number, issue.id)
     for comment in issue.comments:
         github_issue.create_comment(unicode(comment))
+        time.sleep(1.1)    # GitHub fails to order comments otherwise
     if not issue.open:
         github_issue.close()
     if issue.owner.startswith('@'):
