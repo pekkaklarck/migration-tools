@@ -109,9 +109,9 @@ class IssueText(object):
 """.format(text=self.text, user=self.user, date=self.date, url=self.url)
 
 
-class DummyIssue(object):
-    summary = "Dummy issue"
-    description = IssueText('Created in place of deleted Google Code issue')
+class DeletedIssue(object):
+    summary = "<<<Deleted Issue Place Folder>>>"
+    description = IssueText('Created in place of deleted Google Code issue.')
     open = False
     target = ''
     owner = ''
@@ -196,23 +196,26 @@ def main(source_project, target_project, github_username, github_password,
     global SUBMITTER_MAPPER
     SUBMITTER_MAPPER = SubmitterMapper(submitter_map)
     gh, repo = access_github_repo(target_project, github_username, github_password)
-    issues = list(repo.iter_issues(state='all'))
-    next_issue = len(issues) + 1
-    deleted = len([i for i in issues if i.title == DummyIssue.summary])
-    del issues
+    deleted, next_issue = _get_migrated_issue_numbers(repo)
     for issue in get_google_code_issues(source_project, next_issue - deleted,
                                         issue_limit):
+        if api_call_limit_reached(gh):
+            break
         debug('Processing issue:\n{issue}'.format(issue=issue))
         milestone = get_milestone(repo, issue)
         while issue.id > next_issue:
-            # Insert placeholder issues for missing/deleted GCode issues
-            insert_issue(repo, DummyIssue(next_issue))
+            insert_issue(repo, DeletedIssue(next_issue))
             next_issue += 1
         assert issue.id == next_issue, '%r != %r' % (issue.id, next_issue)
         insert_issue(repo, issue, milestone)
         next_issue += 1
-        if api_call_limit_reached(gh):
-            break
+
+
+def _get_migrated_issue_numbers(repo):
+    issues = list(repo.iter_issues(state='all'))
+    next_issue = len(issues) + 1
+    deleted = len([i for i in issues if i.title == DeletedIssue.summary])
+    return deleted, next_issue
 
 
 def access_github_repo(target_project, username, password=None):
