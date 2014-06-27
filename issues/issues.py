@@ -52,7 +52,7 @@ class Issue(object):
     def _format_description(self, details, url):
         text = self._text_content_of(
             details.select('div.issuedescription pre')[0])
-        user = details.select('a.userlink')[0].string
+        user = details.select('div.issuedescription a.userlink')[0].string
         date = details.select('div.issuedescription .date')[0].string
         return IssueText(text, user, date, url)
 
