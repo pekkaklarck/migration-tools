@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
-from github3 import login
+import github3
 
 
 GOOGLE_CODE_ISSUES = (
@@ -15,6 +15,7 @@ GOOGLE_CODE_ISSUES = (
     '&colspec=ID%20Status%20Type%20Priority%20Target%20Owner%20Summary&can=1')
 ISSUE_URL = 'http://code.google.com/p/{project}/issues/detail?id={id}'
 CLOSED_STATES = ['wontfix', 'done', 'invalid', 'fixed']
+SUBMITTER_MAPPER = None
 
 
 class Issue(object):
@@ -26,7 +27,7 @@ class Issue(object):
         self.open = status.lower() not in CLOSED_STATES
         self.labels = self._get_labels(type_, priority, status)
         self.target = target
-        self.owner = owner or None
+        self.owner = SUBMITTER_MAPPER.map(owner)
         self.description, self.comments = self._get_issue_details(project, id_)
 
     def _get_labels(self, type_, priority, status):
@@ -84,8 +85,9 @@ class Issue(object):
 class IssueText(object):
 
     def __init__(self, text, user=None, date=None, url=None):
-        self.text = text
-        self.user = user
+        self.text = text.replace('href="/p/robotframework',
+                                 'href="https://code.google.com/p/robotframework')
+        self.user = SUBMITTER_MAPPER.map(user)
         self.date = DateFormatter().format(date.strip()) if date else None
         self.url = url
 
@@ -94,7 +96,7 @@ class IssueText(object):
             return self.text
         return u"""{text}
 <hr>
-<a href="{url}">Originally submitted</a> by <code>{user}</code> on {date}.
+Originally submitted to <a href="{url}">Google Code</a> by <b>{user}</b> on {date}.
 """.format(text=self.text, user=self.user, date=self.date, url=self.url)
 
 
@@ -106,9 +108,34 @@ class DummyIssue(object):
         self.open = False
         self.labels = []
         self.target = ''
+        self.owner = ''
         self.description = IssueText('Created in place of missing (most likely '
                                      'deleted) Google Code issue')
         self.comments = []
+
+
+class SubmitterMapper(object):
+
+    def __init__(self, path=None):
+        self._map = {}
+        if path:
+            info('Reading submitter map %s' % path)
+            self._read_map(path)
+        else:
+            info('No submitter map')
+
+    def _read_map(self, path):
+        with open(path) as map_file:
+            for row in map_file:
+                if not row or row.startswith('#'):
+                    continue
+                submitter, name = row.split('\t')[:2]
+                self._map[submitter] = name
+
+    def map(self, owner):
+        if owner in self._map:
+            return self._map[owner]
+        return owner.split('@')[0].split('%')[0].strip()
 
 
 class DateFormatter(object):
@@ -157,7 +184,9 @@ class DateFormatter(object):
 
 
 def main(source_project, target_project, github_username, github_password,
-         start_issue, issue_limit, id_sync):
+         start_issue, issue_limit, id_sync, submitter_map=None):
+    global SUBMITTER_MAPPER
+    SUBMITTER_MAPPER = SubmitterMapper(submitter_map)
     gh, repo = access_github_repo(target_project, github_username, github_password)
     existing_issues = [i.number for i in repo.iter_issues(state='all')]
     sync_id = start_issue
@@ -168,7 +197,7 @@ def main(source_project, target_project, github_username, github_password,
             debug('Skipping already processed issue')
             sync_id += 1
             continue
-        while issue.id > sync_id:
+        while id_sync and issue.id > sync_id:
             # Insert placeholder issues for missing/deleted GCode issues
             insert_issue(repo, DummyIssue(sync_id), milestone=None)
             sync_id += 1
@@ -182,7 +211,7 @@ def access_github_repo(target_project, username, password=None):
     if not password:
         prompt = 'GitHub password for {user}: '.format(user=username)
         password = getpass.getpass(prompt)
-    gh = login(username, password=password)
+    gh = github3.login(username, password=password)
     repo_owner, repo_name = target_project.split('/')
     return gh, gh.repository(repo_owner, repo_name)
 
@@ -234,7 +263,13 @@ def api_call_limit_reached(gh):
 
 
 def debug(msg):
-    print >> sys.stderr, msg
+    print >> sys.stderr, '[ debug ]', msg
+
+def error(msg):
+    print >> sys.stderr, '[ ERROR ]', msg
+
+def info(msg):
+    print >> sys.stderr, '[ INFO  ]', msg
 
 
 def insert_issue(repo, issue, milestone):
@@ -245,6 +280,13 @@ def insert_issue(repo, issue, milestone):
         github_issue.create_comment(unicode(comment))
     if not issue.open:
         github_issue.close()
+    if issue.owner.startswith('@'):
+        try:
+            github_issue.assign(issue.owner[1:])
+        except github3.models.GitHubError:
+            error("Failed to assign '%s' as owner for issue %s."
+                  % (issue.owner[1:], issue.id))
+
     debug('Created issue {url}'.format(url=github_issue.html_url))
 
 
@@ -257,8 +299,10 @@ if __name__ == '__main__':
     parser.add_argument('github_password', nargs='?', default=None)
     parser.add_argument('-n', '--limit', dest='limit', type=int, default=-1)
     parser.add_argument('-s', '--start', dest='start', type=int, default=1)
+    parser.add_argument('-m', '--submitter-map', dest='submitter_map')
     parser.add_argument('--no-id-sync', action='store_true')
     args = parser.parse_args()
 
     main(args.source_project, args.target_project, args.github_username,
-         args.github_password, args.start, args.limit, id_sync=not args.no_id_sync)
+         args.github_password, args.start, args.limit, not args.no_id_sync,
+         args.submitter_map)
