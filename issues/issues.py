@@ -14,7 +14,11 @@ GOOGLE_CODE_ISSUES = (
     'http://code.google.com/p/{project}/issues/csv?start={start}&num={num}'
     '&colspec=ID%20Status%20Type%20Priority%20Target%20Owner%20Summary&can=1')
 ISSUE_URL = 'http://code.google.com/p/{project}/issues/detail?id={id}'
-CLOSED_STATES = ['wontfix', 'done', 'invalid', 'fixed']
+CLOSED_STATES = ['wontfix', 'done', 'invalid', 'duplicate', 'fixed']
+TYPE_MAP = {'Defect': 'bug', 'Enhancement': 'enhancement', 'Task': 'task'}
+KEPT_STATUSES = ['Pending', 'Invalid', 'Duplicate', 'WontFix']
+
+
 SUBMITTER_MAPPER = None
 
 
@@ -25,20 +29,24 @@ class Issue(object):
         self.id = int(id_)
         self.summary = summary
         self.open = status.lower() not in CLOSED_STATES
-        self.labels = self._get_labels(type_, priority, status)
-        self.target = target
-        self.owner = SUBMITTER_MAPPER.map(owner)
+        self.labels = list(self._yield_labels(type_, priority, status))
+        self.target = self._get_target(target)
+        self.owner = SUBMITTER_MAPPER.map(owner) if SUBMITTER_MAPPER else owner
         self.description, self.comments = self._get_issue_details(project, id_)
 
-    def _get_labels(self, type_, priority, status):
-        labels = []
-        if type_:
-            labels.append(type_)
+    def _yield_labels(self, type, priority, status):
+        if type in TYPE_MAP:
+            yield TYPE_MAP[type]
         if priority:
-            labels.append('Prio-' + priority)
-        if status:
-            labels.append(status)
-        return labels
+            yield 'prio-' + priority.lower()
+        if status in KEPT_STATUSES:
+            yield status.lower()
+
+    def _get_target(self, target):
+        tokens = target.split('.')
+        if len(tokens) > 1 and all(t.isdigit() for t in tokens):
+            return target
+        return ''
 
     def _get_issue_details(self, project, id_):
         opener = urllib2.build_opener()
@@ -84,19 +92,20 @@ class Issue(object):
 
 class IssueText(object):
 
-    def __init__(self, text, user=None, date=None, url=None):
+    def __init__(self, text, user='', date=None, url=None):
         self.text = text.replace('href="/p/robotframework',
                                  'href="https://code.google.com/p/robotframework')
-        self.user = SUBMITTER_MAPPER.map(user)
+        self.user = SUBMITTER_MAPPER.map(user) if SUBMITTER_MAPPER else user
         self.date = DateFormatter().format(date.strip()) if date else None
         self.url = url
 
     def __unicode__(self):
         if not self.user:
             return self.text
-        return u"""{text}
-<hr>
-Originally submitted to <a href="{url}">Google Code</a> by <b>{user}</b> on {date}.
+        return u"""\
+> *Originally submitted to [Google Code]({url}) by {user} on {date}*
+
+{text}
 """.format(text=self.text, user=self.user, date=self.date, url=self.url)
 
 
@@ -132,10 +141,10 @@ class SubmitterMapper(object):
                 submitter, name = row.split('\t')[:2]
                 self._map[submitter] = name
 
-    def map(self, owner):
-        if owner in self._map:
-            return self._map[owner]
-        return owner.split('@')[0].split('%')[0].strip()
+    def map(self, submitter):
+        if submitter in self._map:
+            return self._map[submitter]
+        return submitter.split('@')[0].split('%')[0].strip()
 
 
 class DateFormatter(object):
