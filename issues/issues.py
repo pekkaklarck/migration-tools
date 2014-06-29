@@ -95,11 +95,17 @@ class Issue(object):
 class IssueText(object):
 
     def __init__(self, text, user='', date=None, url=None):
-        self.text = text.replace('href="/p/robotframework',
-                                 'href="https://code.google.com/p/robotframework')
+        self.text = self._escape_at_mentions_and_fix_links(text)
         self.user = SUBMITTER_MAPPER.map(user) if SUBMITTER_MAPPER else user
         self.date = DateFormatter().format(date.strip()) if date else None
         self.url = url
+
+    def _escape_at_mentions_and_fix_links(self, text):
+        for orig, repl in [('@', '@&#8288;'),
+                           ('href="/', 'href="https://code.google.com/'),
+                           ("href='/", "href='https://code.google.com/")]:
+            text = text.replace(orig, repl)
+        return text
 
     def __unicode__(self):
         if not self.user:
