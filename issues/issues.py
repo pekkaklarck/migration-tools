@@ -236,12 +236,11 @@ def access_github_repo(target_project, username, password=None):
 
 def get_google_code_issues(project, start=1, issue_limit=-1):
     limit_issues = issue_limit > 0
-    issues = []
     num = 100
     while True:
         if limit_issues:
             if issue_limit <= 0:
-                return issues
+                return
             num = min(issue_limit, 100)
             issue_limit -= 100
         url = GOOGLE_CODE_ISSUES.format(project=project, start=start-1, num=num)
@@ -255,10 +254,9 @@ def get_google_code_issues(project, start=1, issue_limit=-1):
                 start += 100
                 paginated = True
             else:
-                issues.append(Issue(project, *row[:7]))
+                yield Issue(project, *row[:7])
         if not paginated:
-            debug('Read {num} issues from Google Code'.format(num=len(issues)))
-            return issues
+            return
 
 
 def get_milestone(repo, issue):
